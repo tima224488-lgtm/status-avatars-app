@@ -804,6 +804,28 @@ function initTonConnect(){
 }
 function walletConnected(){return !!(tonConnectUI && tonConnectUI.account);}
 
+// Angel 2026-09-04: реальная цена (в т.ч. бесплатный минт) считается ТОЛЬКО
+// в контракте -- локальный calcPrice() это лишь примерная подсказка ДО подключения
+// кошелька. После подключения кошелька спрашиваем контракт напрямую (тот же
+// getMintPrice(username, buyer), что использует бот/тесты), иначе бесплатные
+// места (первые 100, один раз на кошелёк) никогда бы не сработали на сайте.
+async function fetchRealPriceNanoton(username, buyerAddressRaw){
+  const {beginCell,Address}=window.__ton;
+  function stackSlice(cell){return ['tvm.Slice', cell.toBoc().toString('base64')];}
+  const usernameCell=beginCell().storeStringTail(username).endCell();
+  const buyerCell=beginCell().storeAddress(Address.parseRaw(buyerAddressRaw)).endCell();
+  const res=await fetch('https://testnet.toncenter.com/api/v2/jsonRPC',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:'1',jsonrpc:'2.0',method:'runGetMethod',
+      params:{address:CONTRACT_ADDRESS,method:'getMintPrice',stack:[stackSlice(usernameCell),stackSlice(buyerCell)]}})
+  });
+  const data=await res.json();
+  if(!data.ok) throw new Error('toncenter error');
+  const raw=data.result.stack[0][1];
+  const abs=raw.startsWith('-')?raw.slice(1):raw;
+  return raw.startsWith('-') ? -BigInt(abs) : BigInt(abs);
+}
+
 function easeOutCubic(t){return 1-Math.pow(1-t,3);}
 
 const confirmBox=document.getElementById('confirmBox'),confirmText=document.getElementById('confirmText'),
@@ -845,14 +867,77 @@ function spin(username){
     return;
   }
   statusEl.textContent='';
+  // Angel 2026-09-04: сначала показываем крутящуюся карточку (интерес!),
+  // кошелёк подключаем только ПОСЛЕ, когда человек уже увидел результат.
+  revealThenConfirm(username,key,price);
+}
+
+function revealThenConfirm(username,key,price){
+  stopShowcase();
+  glowEl.classList.remove('on');
+  statusEl.style.color='';
+  statusEl.textContent='Определяем твою карточку...';
+  const finalHash=hashOf(username.toLowerCase());
+  const DURATION=2600;
+  const start=performance.now();
+  spinning=true;btn.disabled=true;
+  let lastStepTime=0;
+  function frame(now){
+    const elapsed=now-start;
+    const t=Math.min(elapsed/DURATION,1);
+    if(t<1){
+      const eased=easeOutCubic(t);
+      const interval=40+eased*260;
+      if(now-lastStepTime>interval){
+        lastStepTime=now;
+        const randHash=Math.floor(Math.random()*999999);
+        render(c, cfgFromHash(username, randHash, false));
+      }
+      requestAnimationFrame(frame);
+    }else{
+      render(c, cfgFromHash(username, finalHash, true));
+      spinning=false;btn.disabled=false;
+      statusEl.textContent='Нравится? Забери себе за '+price.ton+' TON 👇';
+      glowEl.classList.add('on');
+      stageEl.style.transform='scale(1.06)';
+      setTimeout(()=>{stageEl.style.transform='scale(1)';},60);
+      showConfirmBox(username,key,price);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+function showConfirmBox(username,key,price){
   initTonConnect();
+  let realPriceNanoton=null; // заполняется после подключения кошелька -- см. fetchRealPriceNanoton
   confirmText.textContent=walletConnected()
-    ? `Подтвердить транзакцию: ${price.ton} TON за @${username}?`
-    : `${price.ton} TON за @${username}. Для оплаты нужно подключить TON-кошелёк (TonKeeper и т.п.)`;
-  confirmYes.disabled=false;
+    ? `Проверяем реальную цену для твоего кошелька...`
+    : `До ${price.ton} TON за @${username} (может быть и бесплатно — первые 100 карточек не платят, если ты ещё не забирал бесплатную). Для минта нужно подключить TON-кошелёк.`;
+  confirmYes.disabled=walletConnected();
   confirmYes.textContent=walletConnected() ? 'Подтвердить' : '🔗 Подключить кошелёк и оплатить';
   confirmBox.classList.add('show');
   btn.disabled=true;
+
+  async function refreshRealPrice(addr){
+    confirmText.textContent='Проверяем реальную цену для твоего кошелька...';
+    confirmYes.disabled=true;
+    try{
+      realPriceNanoton=await fetchRealPriceNanoton(username,addr);
+      confirmText.textContent = realPriceNanoton===0n
+        ? `🎁 Бесплатно! @${username} — спишется только газ (~0.02 TON). Подтвердить?`
+        : `Подтвердить транзакцию: ${(Number(realPriceNanoton)/1e9)} TON за @${username}?`;
+      confirmYes.disabled=false;
+      confirmYes.textContent='Подтвердить';
+    }catch(e){
+      // не смогли спросить контракт (сеть/лимиты) -- безопасный вариант: берём
+      // цену по формуле с сайта (контракт сам вернёт лишнее, если реально бесплатно)
+      confirmText.textContent=`Не удалось проверить точную цену, спишем по стандартному тарифу: ${price.ton} TON за @${username} (лишнее контракт вернёт автоматически). Подтвердить?`;
+      confirmYes.disabled=false;
+      confirmYes.textContent='Подтвердить';
+    }
+  }
+
+  if(walletConnected()) refreshRealPrice(tonConnectUI.account.address);
 
   confirmYes.onclick=async ()=>{
     const ui=initTonConnect();
@@ -867,9 +952,7 @@ function spin(username){
         confirmYes.textContent='🔗 Подключить кошелёк и оплатить';
         return;
       }
-      confirmYes.disabled=false;
-      confirmYes.textContent='Подтвердить';
-      confirmText.textContent=`Кошелёк подключён! Подтвердить транзакцию: ${price.ton} TON за @${username}?`;
+      await refreshRealPrice(ui.account.address);
       return; // подключились -- следующий тап реально отправит транзакцию
     }
     confirmYes.disabled=true;
@@ -877,16 +960,20 @@ function spin(username){
     try{
       if(!window.__tonReady) throw new Error('ton core not loaded yet');
       const {beginCell}=window.__ton;
-      const totalNanoton=BigInt(Math.round(price.ton*1e9))+DEPLOY_GAS_NANOTON;
+      const usedPriceNanoton = realPriceNanoton!==null ? realPriceNanoton : BigInt(Math.round(price.ton*1e9));
+      const totalNanoton=usedPriceNanoton+DEPLOY_GAS_NANOTON;
       const body=beginCell().storeUint(MINT_OPCODE,32).storeUint(BigInt(Date.now()),64).storeStringRefTail(username).endCell();
       const boc=body.toBoc().toString('base64');
       await ui.sendTransaction({
+        network:'-3', // testnet -- адрес контракта kQ... тестовый, не mainnet
         validUntil:Math.floor(Date.now()/1000)+300,
         messages:[{address:CONTRACT_ADDRESS,amount:totalNanoton.toString(),payload:boc}]
       });
       confirmBox.classList.remove('show');
       btn.disabled=false;
-      doSpin(username,key);
+      MINTED_LOCK.add(key);
+      statusEl.textContent='✅ Готово! @'+username+' уже в твоём кошельке';
+      statusEl.style.color='';
     }catch(e){
       confirmText.textContent='Транзакция не прошла или была отменена. Попробуй ещё раз.';
       confirmYes.disabled=false;
@@ -896,44 +983,8 @@ function spin(username){
   confirmNo.onclick=()=>{
     confirmBox.classList.remove('show');
     btn.disabled=false;
-    statusEl.textContent='Транзакция отменена';statusEl.style.color='#ff9955';
+    statusEl.textContent='Заминти, если понравилось — просто нажми ещё раз';statusEl.style.color='#ff9955';
   };
-}
-
-function doSpin(username,key){
-  stopShowcase();
-  MINTED_LOCK.add(key);
-  statusEl.style.color='';
-  const finalHash=hashOf(username.toLowerCase());
-  const DURATION=2600;
-  const start=performance.now();
-  spinning=true;btn.disabled=true;
-  glowEl.classList.remove('on');
-  statusEl.textContent='Определяем твою карточку...';
-  let lastStepTime=0;
-
-  function frame(now){
-    const elapsed=now-start;
-    const t=Math.min(elapsed/DURATION,1);
-    if(t<1){
-      const eased=easeOutCubic(t);
-      const interval=40+eased*260; // замедляется к концу
-      if(now-lastStepTime>interval){
-        lastStepTime=now;
-        const randHash=Math.floor(Math.random()*999999);
-        render(c, cfgFromHash(username, randHash, false));
-      }
-      requestAnimationFrame(frame);
-    }else{
-      render(c, cfgFromHash(username, finalHash, true));
-      spinning=false;btn.disabled=false;
-      statusEl.textContent='✅ Готово! @'+username+' уже в твоём кошельке';
-      glowEl.classList.add('on');
-      stageEl.style.transform='scale(1.06)';
-      setTimeout(()=>{stageEl.style.transform='scale(1)';},60);
-    }
-  }
-  requestAnimationFrame(frame);
 }
 
 btn.onclick=()=>{const v=input.value.trim();if(!v||spinning)return;spin(v);};
