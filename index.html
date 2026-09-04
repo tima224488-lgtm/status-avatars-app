@@ -992,7 +992,7 @@ function showConfirmBox(username,key,price){
       // Angel 2026-09-14: без метки версии эта ссылка ВСЕГДА одинаковая для
       // одного и того же username -- браузер кешировал её один раз и потом
       // упорно показывал старый код независимо от того, что опубликовано.
-      const url='https://tima224488-lgtm.github.io/status-avatars-app/?u='+encodeURIComponent(username)+'&v='+Date.now();
+      const url='https://tima224488-lgtm.github.io/status-avatars-app/mint.html?u='+encodeURIComponent(username)+'&v='+Date.now();
       window.Telegram.WebApp.openLink(url,{try_instant_view:false});
     };
   }else{
