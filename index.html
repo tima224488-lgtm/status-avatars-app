@@ -798,9 +798,9 @@ function updatePrice(){
 let spinning=false;
 // кошелёк НЕ нужен, чтобы зайти и покрутить/посмотреть — только в момент оплаты (как в реальном TonConnect)
 // === НАСТОЯЩАЯ отправка минта через TonConnect (заменяет старую симуляцию) ===
-// TESTNET-адрес контракта -- см. testnet_deploy_result.json в проекте, не
-// переключать на mainnet без явного решения Angel.
-const CONTRACT_ADDRESS='kQCjA9Sw50lls6Kh5Uh_gtbkKL3c-MWJ16tBBRXkSCsMhBep';
+// MAINNET-адрес контракта -- см. mainnet_deploy_result.json в проекте.
+// Angel явно подтвердила переход на mainnet 2026-09-14 -- реальные деньги.
+const CONTRACT_ADDRESS='EQD946p72Yj_3Yo3J9jYpQB3ZI-pbhbylcs0YhYnMY-qusZP';
 const MINT_OPCODE=526072986; // 0x1f5b3c9a, из status_avatars_collection.tact
 const DEPLOY_GAS_NANOTON=20000000n; // 0.02 TON, контракт вернёт сдачу сам если переплата
 let tonConnectUI=null;
@@ -823,7 +823,7 @@ async function fetchRealPriceNanoton(username, buyerAddressRaw){
   function stackSlice(cell){return ['tvm.Slice', cell.toBoc().toString('base64')];}
   const usernameCell=beginCell().storeStringTail(username).endCell();
   const buyerCell=beginCell().storeAddress(Address.parseRaw(buyerAddressRaw)).endCell();
-  const res=await fetch('https://testnet.toncenter.com/api/v2/jsonRPC',{
+  const res=await fetch('https://toncenter.com/api/v2/jsonRPC',{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:'1',jsonrpc:'2.0',method:'runGetMethod',
       params:{address:CONTRACT_ADDRESS,method:'getMintPrice',stack:[stackSlice(usernameCell),stackSlice(buyerCell)]}})
@@ -846,7 +846,7 @@ async function fetchRealPriceNanoton(username, buyerAddressRaw){
 let freeRemainingCache=null;
 async function refreshFreeRemaining(){
   try{
-    const res=await fetch('https://testnet.toncenter.com/api/v2/jsonRPC',{
+    const res=await fetch('https://toncenter.com/api/v2/jsonRPC',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({id:'1',jsonrpc:'2.0',method:'runGetMethod',
         params:{address:CONTRACT_ADDRESS,method:'freeMintsRemaining',stack:[]}})
@@ -1003,7 +1003,7 @@ function showConfirmBox(username,key,price){
       const body=beginCell().storeUint(MINT_OPCODE,32).storeUint(BigInt(Date.now()),64).storeStringRefTail(username).endCell();
       const boc=body.toBoc().toString('base64');
       await ui.sendTransaction({
-        network:'-3', // testnet -- адрес контракта kQ... тестовый, не mainnet
+        network:'-239', // mainnet
         validUntil:Math.floor(Date.now()/1000)+300,
         messages:[{address:CONTRACT_ADDRESS,amount:totalNanoton.toString(),payload:boc}]
       });
