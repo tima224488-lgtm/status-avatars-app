@@ -817,6 +817,28 @@ function initTonConnect(){
 }
 function walletConnected(){return !!(tonConnectUI && tonConnectUI.account);}
 
+// Angel 2026-09-14: бесплатный toncenter жёстко лимитирует запросы -- один
+// случайный 429 раньше тут же ронял цену в платный запасной вариант, даже
+// когда человек реально имел право на бесплатный минт. Теперь пробуем
+// несколько раз с паузой, как в деплой-скриптах, прежде чем сдаться.
+async function runGetMethod(method, stack){
+  for(let attempt=0; attempt<5; attempt++){
+    const res=await fetch('https://toncenter.com/api/v2/jsonRPC',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:'1',jsonrpc:'2.0',method:'runGetMethod',
+        params:{address:CONTRACT_ADDRESS,method,stack}})
+    });
+    if(res.status===429){
+      await new Promise(r=>setTimeout(r,1200*(attempt+1)));
+      continue;
+    }
+    const data=await res.json();
+    if(!data.ok) throw new Error('toncenter error: '+JSON.stringify(data));
+    return data.result.stack;
+  }
+  throw new Error('toncenter rate-limited after retries');
+}
+
 // Angel 2026-09-04: реальная цена (в т.ч. бесплатный минт) считается ТОЛЬКО
 // в контракте -- локальный calcPrice() это лишь примерная подсказка ДО подключения
 // кошелька. После подключения кошелька спрашиваем контракт напрямую (тот же
@@ -827,14 +849,8 @@ async function fetchRealPriceNanoton(username, buyerAddressRaw){
   function stackSlice(cell){return ['tvm.Slice', cell.toBoc().toString('base64')];}
   const usernameCell=beginCell().storeStringTail(username).endCell();
   const buyerCell=beginCell().storeAddress(Address.parseRaw(buyerAddressRaw)).endCell();
-  const res=await fetch('https://toncenter.com/api/v2/jsonRPC',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:'1',jsonrpc:'2.0',method:'runGetMethod',
-      params:{address:CONTRACT_ADDRESS,method:'getMintPrice',stack:[stackSlice(usernameCell),stackSlice(buyerCell)]}})
-  });
-  const data=await res.json();
-  if(!data.ok) throw new Error('toncenter error');
-  const raw=data.result.stack[0][1];
+  const stack=await runGetMethod('getMintPrice',[stackSlice(usernameCell),stackSlice(buyerCell)]);
+  const raw=stack[0][1];
   const abs=raw.startsWith('-')?raw.slice(1):raw;
   return raw.startsWith('-') ? -BigInt(abs) : BigInt(abs);
 }
@@ -850,14 +866,8 @@ async function fetchRealPriceNanoton(username, buyerAddressRaw){
 let freeRemainingCache=null;
 async function refreshFreeRemaining(){
   try{
-    const res=await fetch('https://toncenter.com/api/v2/jsonRPC',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:'1',jsonrpc:'2.0',method:'runGetMethod',
-        params:{address:CONTRACT_ADDRESS,method:'freeMintsRemaining',stack:[]}})
-    });
-    const data=await res.json();
-    if(!data.ok) return;
-    const raw=data.result.stack[0][1];
+    const stack=await runGetMethod('freeMintsRemaining',[]);
+    const raw=stack[0][1];
     freeRemainingCache=BigInt(raw);
   }catch(e){ /* не смогли -- подсказка просто останется на резервном тексте с ценой */ }
 }
