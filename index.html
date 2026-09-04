@@ -66,6 +66,7 @@ canvas{width:100%;height:100%;display:block}
     <button id="confirmYes">Подтвердить</button>
     <button id="confirmNo" class="btnCancel">Отмена</button>
   </div>
+  <button id="openBrowserBtn" class="btnCancel" style="display:none;font-size:13px">🌐 Открыть в браузере для оплаты</button>
 </div>
 <div class="stage" id="stage">
   <canvas id="c" width="800" height="800"></canvas>
@@ -970,6 +971,22 @@ function showConfirmBox(username,key,price){
   confirmBox.classList.add('show');
   btn.disabled=true;
 
+  // Angel 2026-09-14: известный неисправленный баг TonConnect внутри Telegram
+  // WebView -- экран "прыгает" между Telegram и Tonkeeper во время ввода
+  // пароля и транзакция срывается с "User declined", хотя пользователь ничего
+  // не отклонял (github.com/ton-connect/sdk/issues/302, до сих пор open).
+  // Обходной путь: предложить открыть ТУ ЖЕ страницу в обычном браузере
+  // телефона (с юзернеймом в ссылке), где Tonkeeper работает без конфликта.
+  if(!walletConnected() && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData){
+    openBrowserBtn.style.display='block';
+    openBrowserBtn.onclick=()=>{
+      const url='https://tima224488-lgtm.github.io/status-avatars-app/?u='+encodeURIComponent(username);
+      window.Telegram.WebApp.openLink(url,{try_instant_view:false});
+    };
+  }else{
+    openBrowserBtn.style.display='none';
+  }
+
   async function refreshRealPrice(addr){
     confirmText.textContent='Проверяем реальную цену для твоего кошелька...';
     confirmYes.disabled=true;
@@ -1070,6 +1087,21 @@ input.addEventListener('input',()=>{
   if(input.value.trim()){stopShowcase();drawEmptyPlaceholder();}
   else if(!spinning){startShowcase();}
 });
+
+// Angel 2026-09-14: если пришли сюда по ссылке из кнопки "Открыть в браузере
+// для оплаты" (обход бага TonConnect+Telegram) -- имя уже известно, не
+// заставляем вводить его заново, сразу показываем результат и переходим к оплате.
+(function(){
+  const params=new URLSearchParams(location.search);
+  const u=params.get('u');
+  if(u){
+    const clean=u.replace(/[^a-zA-Z0-9]/g,'').toLowerCase();
+    if(clean.length>=3){
+      input.value=clean;
+      setTimeout(()=>{ refreshFreeRemaining().then(()=>btn.click()); },300);
+    }
+  }
+})();
 </script>
 </body>
 </html>
