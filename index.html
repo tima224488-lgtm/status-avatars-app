@@ -988,7 +988,10 @@ function showConfirmBox(username,key,price){
   if(!walletConnected() && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData){
     openBrowserBtn.style.display='block';
     openBrowserBtn.onclick=()=>{
-      const url='https://tima224488-lgtm.github.io/status-avatars-app/?u='+encodeURIComponent(username);
+      // Angel 2026-09-14: без метки версии эта ссылка ВСЕГДА одинаковая для
+      // одного и того же username -- браузер кешировал её один раз и потом
+      // упорно показывал старый код независимо от того, что опубликовано.
+      const url='https://tima224488-lgtm.github.io/status-avatars-app/?u='+encodeURIComponent(username)+'&v='+Date.now();
       window.Telegram.WebApp.openLink(url,{try_instant_view:false});
     };
   }else{
