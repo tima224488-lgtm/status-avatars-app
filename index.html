@@ -786,7 +786,15 @@ function updatePrice(){
   // Angel 2026-09-14: эта строка — лишь ПРИКИДКА до подключения кошелька,
   // контракт не умеет заранее знать чей это кошелёк. Реальная (возможно
   // нулевая) цена показывается ПОСЛЕ подключения кошелька, в окне подтверждения.
-  priceEl.textContent=`До ${p.ton} TON${p.premium?' 👑':''}${reason} — или бесплатно (первые 100, если у тебя ещё не было своей карточки). Точную цену покажем после подключения кошелька.`;
+  // Если по данным контракта бесплатные места ещё есть -- ведём с "Бесплатно",
+  // а не пугаем ценой: для подавляющего большинства (первый минт с кошелька)
+  // это правда, а для повторного кошелька честная цена всё равно появится на
+  // следующем шаге, ДО того как что-либо спишется.
+  if(freeRemainingCache!==null && freeRemainingCache>0n){
+    priceEl.textContent=`🎁 Бесплатно! (акция: первые 100 карточек, 1 раз на кошелёк — ещё ${freeRemainingCache} мест${freeRemainingCache===1n?'о':''})`;
+  }else{
+    priceEl.textContent=`Цена: ${p.ton} TON${p.premium?' 👑':''}${reason}`;
+  }
 }
 
 let spinning=false;
@@ -828,6 +836,30 @@ async function fetchRealPriceNanoton(username, buyerAddressRaw){
   const abs=raw.startsWith('-')?raw.slice(1):raw;
   return raw.startsWith('-') ? -BigInt(abs) : BigInt(abs);
 }
+
+// Angel 2026-09-14: чужой человек, увидев "до 6 TON" ДО подключения кошелька,
+// пугается и уходит, даже если для него это реально бесплатно (первые 100).
+// Глобальный остаток бесплатных мест (без адреса кошелька -- дешёвый вызов,
+// без TupleBuilder) спрашиваем ОДИН раз при загрузке страницы и кэшируем, чтобы
+// подсказка честно и уверенно писала "Бесплатно" для подавляющего большинства
+// (первый минт с кошелька), а не пугала ценой раньше времени. Итоговая проверка
+// (было ли УЖЕ у этого конкретного кошелька) всё равно происходит после
+// подключения кошелька, в окне подтверждения -- см. fetchRealPriceNanoton.
+let freeRemainingCache=null;
+async function refreshFreeRemaining(){
+  try{
+    const res=await fetch('https://testnet.toncenter.com/api/v2/jsonRPC',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:'1',jsonrpc:'2.0',method:'runGetMethod',
+        params:{address:CONTRACT_ADDRESS,method:'freeMintsRemaining',stack:[]}})
+    });
+    const data=await res.json();
+    if(!data.ok) return;
+    const raw=data.result.stack[0][1];
+    freeRemainingCache=BigInt(raw);
+  }catch(e){ /* не смогли -- подсказка просто останется на резервном тексте с ценой */ }
+}
+refreshFreeRemaining();
 
 function easeOutCubic(t){return 1-Math.pow(1-t,3);}
 
@@ -900,7 +932,9 @@ function revealThenConfirm(username,key,price){
     }else{
       render(c, cfgFromHash(username, finalHash, true));
       spinning=false;btn.disabled=false;
-      statusEl.textContent='Нравится? Забери себе за '+price.ton+' TON 👇';
+      statusEl.textContent = (freeRemainingCache!==null && freeRemainingCache>0n)
+        ? 'Нравится? Забери себе 🎁 бесплатно 👇'
+        : 'Нравится? Забери себе за '+price.ton+' TON 👇';
       glowEl.classList.add('on');
       stageEl.style.transform='scale(1.06)';
       setTimeout(()=>{stageEl.style.transform='scale(1)';},60);
@@ -913,9 +947,12 @@ function revealThenConfirm(username,key,price){
 function showConfirmBox(username,key,price){
   initTonConnect();
   let realPriceNanoton=null; // заполняется после подключения кошелька -- см. fetchRealPriceNanoton
+  const stillFree=freeRemainingCache!==null && freeRemainingCache>0n;
   confirmText.textContent=walletConnected()
     ? `Проверяем реальную цену для твоего кошелька...`
-    : `До ${price.ton} TON за @${username} (может быть и бесплатно — первые 100 карточек не платят, если ты ещё не забирал бесплатную). Для минта нужно подключить TON-кошелёк.`;
+    : stillFree
+      ? `🎁 @${username} бесплатно! (акция: первые 100 карточек, 1 раз на кошелёк). Подключи TON-кошелёк, чтобы забрать — спишется только газ ~0.02 TON.`
+      : `${price.ton} TON за @${username}. Для минта нужно подключить TON-кошелёк.`;
   confirmYes.disabled=walletConnected();
   confirmYes.textContent=walletConnected() ? 'Подтвердить' : '🔗 Подключить кошелёк и оплатить';
   confirmBox.classList.add('show');
