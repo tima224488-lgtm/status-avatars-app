@@ -744,16 +744,16 @@ function calcPrice(username){
   const hasDigits=/\d/.test(username);
   const len=username.length;
   if(len<3) return null; // такой длины юзернеймов не существует вообще
-  const isWord=(len===3)?isReal3Letter(username):looksLikeRealWord(username);
-  let base;
-  // 3 и 4 буквы — ВСЕГДА премиум (не только для настоящих слов), настоящее слово
-  // сверху даёт ещё небольшую надбавку. Синхронизировано с priceFor() в контракте
+  // Angel 2026-09-14: бонус за "настоящее слово" убран целиком (незачем было
+  // грузить в контракт словарь из 568 слов ради него) -- цена зависит ТОЛЬКО
+  // от длины. Синхронизировано с priceFor() в контракте
   // (status_avatars_collection.tact) — если меняешь одно, обязательно менять и другое.
-  if(len===3) base = isWord ? 15 : 12;
-  else if(len===4) base = isWord ? 9 : 6;
-  else base = isWord ? 3 : 1;
+  let base;
+  if(len===3) base = 12;
+  else if(len===4) base = 6;
+  else base = 1;
   const ton=hasDigits?Math.round(base*0.6*10)/10:base;
-  return {ton, hasDigits, isWord, len, premium: isWord};
+  return {ton, hasDigits, len};
 }
 const priceEl=document.getElementById('price');
 function checkOurPremium(key){
@@ -780,9 +780,7 @@ function updatePrice(){
   }
   const p=calcPrice(v);
   priceEl.style.color='#ffd23f';
-  let reason='';
-  if(p.hasDigits) reason=' (со скидкой за цифры)';
-  else if(!p.isWord) reason=' (со скидкой — не похоже на настоящее слово)';
+  let reason=p.hasDigits?' (со скидкой за цифры)':'';
   // Angel 2026-09-14: эта строка — лишь ПРИКИДКА до подключения кошелька,
   // контракт не умеет заранее знать чей это кошелёк. Реальная (возможно
   // нулевая) цена показывается ПОСЛЕ подключения кошелька, в окне подтверждения.
@@ -793,7 +791,7 @@ function updatePrice(){
   if(freeRemainingCache!==null && freeRemainingCache>0n){
     priceEl.textContent=`🎁 Бесплатно! (акция: первые 100 карточек, 1 раз на кошелёк — ещё ${freeRemainingCache} мест${freeRemainingCache===1n?'о':''})`;
   }else{
-    priceEl.textContent=`Цена: ${p.ton} TON${p.premium?' 👑':''}${reason}`;
+    priceEl.textContent=`Цена: ${p.ton} TON${reason}`;
   }
 }
 
@@ -802,7 +800,7 @@ let spinning=false;
 // === НАСТОЯЩАЯ отправка минта через TonConnect (заменяет старую симуляцию) ===
 // TESTNET-адрес контракта -- см. testnet_deploy_result.json в проекте, не
 // переключать на mainnet без явного решения Angel.
-const CONTRACT_ADDRESS='kQCRZZ40O6doKErMFIVuSMc6s6-QN_X4GCMYniAXtDyncjeS';
+const CONTRACT_ADDRESS='kQCjA9Sw50lls6Kh5Uh_gtbkKL3c-MWJ16tBBRXkSCsMhBep';
 const MINT_OPCODE=526072986; // 0x1f5b3c9a, из status_avatars_collection.tact
 const DEPLOY_GAS_NANOTON=20000000n; // 0.02 TON, контракт вернёт сдачу сам если переплата
 let tonConnectUI=null;
