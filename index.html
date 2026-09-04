@@ -964,7 +964,13 @@ function showConfirmBox(username,key,price){
     confirmText.textContent='Проверяем реальную цену для твоего кошелька...';
     confirmYes.disabled=true;
     try{
-      realPriceNanoton=await fetchRealPriceNanoton(username,addr);
+      realPriceNanoton=await fetchRealPriceNanoton(username.toLowerCase(),addr);
+      if(realPriceNanoton<0n){
+        // контракт вернул -1 (защитный сигнал "имя невалидно" из getMintPrice)
+        confirmText.textContent=`@${username} — недопустимое имя для контракта. Попробуй другое.`;
+        confirmYes.disabled=true;
+        return;
+      }
       confirmText.textContent = realPriceNanoton===0n
         ? `🎁 Бесплатно! @${username} — спишется только газ (~0.02 TON). Подтвердить?`
         : `Подтвердить транзакцию: ${(Number(realPriceNanoton)/1e9)} TON за @${username}?`;
@@ -1004,7 +1010,7 @@ function showConfirmBox(username,key,price){
       const {beginCell}=window.__ton;
       const usedPriceNanoton = realPriceNanoton!==null ? realPriceNanoton : BigInt(Math.round(price.ton*1e9));
       const totalNanoton=usedPriceNanoton+DEPLOY_GAS_NANOTON;
-      const body=beginCell().storeUint(MINT_OPCODE,32).storeUint(BigInt(Date.now()),64).storeStringRefTail(username).endCell();
+      const body=beginCell().storeUint(MINT_OPCODE,32).storeUint(BigInt(Date.now()),64).storeStringRefTail(username.toLowerCase()).endCell();
       const boc=body.toBoc().toString('base64');
       await ui.sendTransaction({
         network:'-239', // mainnet
@@ -1037,8 +1043,15 @@ btn.onclick=()=>{const v=input.value.trim();if(!v||spinning)return;spin(v);};
 input.addEventListener('keydown',e=>{if(e.key==='Enter')btn.click();});
 // username может содержать ТОЛЬКО латинские буквы и цифры — таковы реальные правила Telegram
 // (баг найден Angel 2026-09-04: раньше регулярка ошибочно разрешала ещё и кириллицу а-яА-ЯёЁ)
+// БАГ найден Angel 2026-09-14: контракт принимает ТОЛЬКО строчные буквы
+// (validateAndHash/getMintPrice возвращают ошибку на любую заглавную), а поле
+// ввода позволяло их печатать -- из-за этого реальная цена не считалась
+// (getMintPrice видел "неверное имя"), и минт с любой заглавной буквой был
+// обречён на провал ещё до подписи в кошельке. Теперь просто не даём вводить
+// заглавные вообще, чтобы то, что видно на экране, ВСЕГДА совпадало с тем,
+// что реально уходит в контракт.
 function sanitizeUsername(){
-  const clean=input.value.replace(/[^a-zA-Z0-9]/g,'');
+  const clean=input.value.replace(/[^a-zA-Z0-9]/g,'').toLowerCase();
   if(clean!==input.value) input.value=clean;
 }
 input.addEventListener('input',()=>{
