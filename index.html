@@ -849,7 +849,10 @@ async function fetchRealPriceNanoton(username, buyerAddressRaw){
   const {beginCell,Address}=window.__ton;
   function stackSlice(cell){return ['tvm.Slice', cell.toBoc().toString('base64')];}
   const usernameCell=beginCell().storeStringTail(username).endCell();
-  const buyerCell=beginCell().storeAddress(Address.parseRaw(buyerAddressRaw)).endCell();
+  // Address.parse (не parseRaw!) -- некоторые кошельки могут отдавать адрес не
+  // в чистом "0:hex" формате, а parseRaw на таком падал молча и цена уходила
+  // в платный запасной вариант даже для бесплатных мест.
+  const buyerCell=beginCell().storeAddress(Address.parse(buyerAddressRaw)).endCell();
   const stack=await runGetMethod('getMintPrice',[stackSlice(usernameCell),stackSlice(buyerCell)]);
   const raw=stack[0][1];
   const abs=raw.startsWith('-')?raw.slice(1):raw;
@@ -1004,9 +1007,11 @@ function showConfirmBox(username,key,price){
       confirmYes.disabled=false;
       confirmYes.textContent='Подтвердить';
     }catch(e){
-      // не смогли спросить контракт (сеть/лимиты) -- безопасный вариант: берём
-      // цену по формуле с сайта (контракт сам вернёт лишнее, если реально бесплатно)
-      confirmText.textContent=`Не удалось проверить точную цену, спишем по стандартному тарифу: ${price.ton} TON за @${username} (лишнее контракт вернёт автоматически). Подтвердить?`;
+      // не смогли спросить контракт -- безопасный вариант: берём цену по
+      // формуле с сайта (контракт сам вернёт лишнее, если реально бесплатно).
+      // Angel 2026-09-14: раньше причина пряталась, теперь показываем её же,
+      // чтобы не гадать при повторных жалобах.
+      confirmText.textContent=`Не удалось проверить точную цену (${e&&e.message?e.message:e}), спишем по стандартному тарифу: ${price.ton} TON за @${username} (лишнее контракт вернёт автоматически). Подтвердить?`;
       confirmYes.disabled=false;
       confirmYes.textContent='Подтвердить';
     }
@@ -1039,6 +1044,12 @@ function showConfirmBox(username,key,price){
       const totalNanoton=usedPriceNanoton+DEPLOY_GAS_NANOTON;
       const body=beginCell().storeUint(MINT_OPCODE,32).storeUint(BigInt(Date.now()),64).storeStringRefTail(username.toLowerCase()).endCell();
       const boc=body.toBoc().toString('base64');
+      // Angel 2026-09-14: TonConnect resolves sendTransaction as soon as the
+      // WALLET accepts/signs it -- это НЕ гарантия, что минт реально прошёл
+      // в контракте (уже был случай "Готово!" на сайте при нулях в блокчейне).
+      // Поэтому до победного текста реально спрашиваем блокчейн.
+      let beforeIndex=null;
+      try{ const s=await runGetMethod('get_collection_data',[]); beforeIndex=BigInt(s[0][1]); }catch(e){}
       await ui.sendTransaction({
         network:'-239', // mainnet
         validUntil:Math.floor(Date.now()/1000)+300,
@@ -1046,9 +1057,24 @@ function showConfirmBox(username,key,price){
       });
       confirmBox.classList.remove('show');
       btn.disabled=false;
-      MINTED_LOCK.add(key);
-      statusEl.textContent='✅ Готово! @'+username+' уже в твоём кошельке';
       statusEl.style.color='';
+      statusEl.textContent='Кошелёк отправил транзакцию, ждём подтверждения в блокчейне...';
+      let confirmed=(beforeIndex===null); // если не смогли узнать индекс заранее -- не блокируем, просто доверяем кошельку
+      for(let i=0;i<15 && !confirmed;i++){
+        await new Promise(r=>setTimeout(r,3000));
+        try{
+          const s=await runGetMethod('get_collection_data',[]);
+          const afterIndex=BigInt(s[0][1]);
+          if(afterIndex>beforeIndex) confirmed=true;
+        }catch(e){}
+      }
+      if(confirmed){
+        MINTED_LOCK.add(key);
+        statusEl.textContent='✅ Готово! @'+username+' уже в твоём кошельке';
+      }else{
+        statusEl.textContent='Кошелёк отправил транзакцию, но подтверждения из блокчейна пока нет. Проверь баланс/NFT через минуту — если ничего не изменилось, попробуй ещё раз.';
+        statusEl.style.color='#ff9955';
+      }
     }catch(e){
       // Angel 2026-09-14: раньше тут был общий текст "попробуй ещё раз" без
       // причины -- теперь показываем настоящую ошибку от кошелька, чтобы
