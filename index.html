@@ -807,7 +807,11 @@ let tonConnectUI=null;
 function initTonConnect(){
   if(tonConnectUI) return tonConnectUI;
   tonConnectUI=new TON_CONNECT_UI.TonConnectUI({
-    manifestUrl:'https://tima224488-lgtm.github.io/status-avatars-app/tonconnect-manifest.json'
+    manifestUrl:'https://tima224488-lgtm.github.io/status-avatars-app/tonconnect-manifest.json',
+    // Angel 2026-09-14: без этого телефон не знает, что после подтверждения в
+    // Tonkeeper нужно вернуться именно в Telegram -- экран "прыгал" между
+    // приложениями и в итоге сбрасывал транзакцию как отменённую пользователем.
+    actionsConfiguration:{ twaReturnUrl:'https://t.me/StatusAvatarsNFTBot' }
   });
   return tonConnectUI;
 }
