@@ -749,9 +749,9 @@ function calcPrice(username){
   // 3 и 4 буквы — ВСЕГДА премиум (не только для настоящих слов), настоящее слово
   // сверху даёт ещё небольшую надбавку. Синхронизировано с priceFor() в контракте
   // (status_avatars_collection.tact) — если меняешь одно, обязательно менять и другое.
-  if(len===3) base = isWord ? 25 : 20;
-  else if(len===4) base = isWord ? 15 : 10;
-  else base = isWord ? 5 : 1.5;
+  if(len===3) base = isWord ? 15 : 12;
+  else if(len===4) base = isWord ? 9 : 6;
+  else base = isWord ? 3 : 1;
   const ton=hasDigits?Math.round(base*0.6*10)/10:base;
   return {ton, hasDigits, isWord, len, premium: isWord};
 }
@@ -791,7 +791,7 @@ let spinning=false;
 // === НАСТОЯЩАЯ отправка минта через TonConnect (заменяет старую симуляцию) ===
 // TESTNET-адрес контракта -- см. testnet_deploy_result.json в проекте, не
 // переключать на mainnet без явного решения Angel.
-const CONTRACT_ADDRESS='kQCOuxtEvBnLQpztMbcibWJiaeoHylKq9uPPHw4mjHAr1rIR';
+const CONTRACT_ADDRESS='kQCRZZ40O6doKErMFIVuSMc6s6-QN_X4GCMYniAXtDyncjeS';
 const MINT_OPCODE=526072986; // 0x1f5b3c9a, из status_avatars_collection.tact
 const DEPLOY_GAS_NANOTON=20000000n; // 0.02 TON, контракт вернёт сдачу сам если переплата
 let tonConnectUI=null;
