@@ -1015,7 +1015,11 @@ function showConfirmBox(username,key,price){
       statusEl.textContent='✅ Готово! @'+username+' уже в твоём кошельке';
       statusEl.style.color='';
     }catch(e){
-      confirmText.textContent='Транзакция не прошла или была отменена. Попробуй ещё раз.';
+      // Angel 2026-09-14: раньше тут был общий текст "попробуй ещё раз" без
+      // причины -- теперь показываем настоящую ошибку от кошелька, чтобы
+      // не гадать вслепую при повторных жалобах.
+      const reason = (e && e.message) ? e.message : String(e);
+      confirmText.textContent='Ошибка: '+reason+'. Попробуй ещё раз.';
       confirmYes.disabled=false;
       confirmYes.textContent='Подтвердить';
     }
