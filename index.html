@@ -1066,8 +1066,6 @@ function showConfirmBox(username,key,price){
       const {beginCell}=window.__ton;
       const usedPriceNanoton = realPriceNanoton!==null ? realPriceNanoton : BigInt(Math.round(price.ton*1e9));
       const totalNanoton=usedPriceNanoton+DEPLOY_GAS_NANOTON;
-      { const dbg=document.getElementById('debugLine');
-        if(dbg) dbg.textContent += (dbg.textContent?' | ':'')+'SENDING: realPriceNanoton='+(realPriceNanoton===null?'null':realPriceNanoton.toString())+' used='+usedPriceNanoton.toString()+' total='+totalNanoton.toString(); }
       const body=beginCell().storeUint(MINT_OPCODE,32).storeUint(BigInt(Date.now()),64).storeStringRefTail(username.toLowerCase()).endCell();
       const boc=body.toBoc().toString('base64');
       // Angel 2026-09-14: TonConnect resolves sendTransaction as soon as the
