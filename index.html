@@ -72,7 +72,6 @@ canvas{width:100%;height:100%;display:block}
     <button id="confirmNo" class="btnCancel">Отмена</button>
   </div>
   <button id="openBrowserBtn" class="btnCancel" style="display:none;font-size:13px">🌐 Открыть в браузере для оплаты</button>
-  <div id="debugLine" style="font-size:10px;color:#888;word-break:break-all"></div>
 </div>
 <div class="stage" id="stage">
   <canvas id="c" width="800" height="800"></canvas>
@@ -981,7 +980,6 @@ function revealThenConfirm(username,key,price){
 
 function showConfirmBox(username,key,price){
   initTonConnect();
-  { const dbg=document.getElementById('debugLine'); if(dbg) dbg.textContent=''; }
   let realPriceNanoton=null; // заполняется после подключения кошелька -- см. fetchRealPriceNanoton
   const stillFree=freeRemainingCache!==null && freeRemainingCache>0n;
   confirmText.textContent=walletConnected()
@@ -1016,15 +1014,8 @@ function showConfirmBox(username,key,price){
   async function refreshRealPrice(addr){
     confirmText.textContent='Проверяем реальную цену для твоего кошелька...';
     confirmYes.disabled=true;
-    // Angel 2026-09-14: временная отладочная строка -- показываем на экране
-    // сам адрес и вычисленное число, чтобы увидеть правду с телефона Angel
-    // вместо очередного раунда гаданий. Убрать после того как найдём причину.
-    const dbg=document.getElementById('debugLine');
-    function dbgLog(msg){ if(dbg) dbg.textContent += (dbg.textContent?' | ':'')+msg; }
-    dbgLog('addr='+addr);
     try{
       realPriceNanoton=await fetchRealPriceNanoton(username.toLowerCase(),addr);
-      dbgLog('raw='+realPriceNanoton.toString());
       if(realPriceNanoton<0n){
         // контракт вернул -1 (защитный сигнал "имя невалидно" из getMintPrice)
         confirmText.textContent=`@${username} — недопустимое имя для контракта. Попробуй другое.`;
@@ -1037,20 +1028,22 @@ function showConfirmBox(username,key,price){
       confirmYes.disabled=false;
       confirmYes.textContent='Подтвердить';
     }catch(e){
-      // не смогли спросить контракт -- безопасный вариант: берём цену по
-      // формуле с сайта (контракт сам вернёт лишнее, если реально бесплатно).
-      // Angel 2026-09-14: раньше причина пряталась, теперь показываем её же,
-      // чтобы не гадать при повторных жалобах.
-      dbgLog('ERROR='+(e&&e.stack?e.stack:(e&&e.message?e.message:e)));
-      confirmText.textContent=`Не удалось проверить точную цену (${e&&e.message?e.message:e}), спишем по стандартному тарифу: ${price.ton} TON за @${username} (лишнее контракт вернёт автоматически). Подтвердить?`;
+      // 2026-09-16 (Angel): раньше здесь тихо подставлялась цена по местной
+      // формуле, если не получилось спросить контракт напрямую -- ровно
+      // из-за этого один раз честно бесплатный минт попросил заплатить
+      // платный тариф во время временного сбоя сети. НИКОГДА не угадываем
+      // цену -- либо знаем точно, либо честно просим попробовать снова.
+      confirmText.textContent=`Не получилось проверить цену — сеть подвисла на секунду. Нажми ещё раз, ничего не спишется, пока цена не проверена по-настоящему.`;
       confirmYes.disabled=false;
-      confirmYes.textContent='Подтвердить';
+      confirmYes.textContent='🔄 Проверить ещё раз';
+      confirmYes.onclick=()=>{ confirmYes.onclick=confirmYesHandler; refreshRealPrice(addr); };
+      return;
     }
   }
 
   if(walletConnected()) refreshRealPrice(tonConnectUI.account.address);
 
-  confirmYes.onclick=async ()=>{
+  async function confirmYesHandler(){
     const ui=initTonConnect();
     if(!walletConnected()){
       confirmYes.disabled=true;
@@ -1117,7 +1110,8 @@ function showConfirmBox(username,key,price){
       confirmYes.disabled=false;
       confirmYes.textContent='Подтвердить';
     }
-  };
+  }
+  confirmYes.onclick=confirmYesHandler;
   confirmNo.onclick=()=>{
     confirmBox.classList.remove('show');
     btn.disabled=false;
